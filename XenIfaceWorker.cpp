@@ -71,59 +71,59 @@ XenIfaceWorker::XenIfaceWorker() : _worker([this](std::stop_token stop) { Worker
 
 XenIfaceWorker::~XenIfaceWorker() {
     _worker.request_stop();
-    std::lock_guard lock(_state.Mutex);
-    _state.Signal.notify_one();
+    std::lock_guard lock(_mutex);
+    _signal.notify_one();
 }
 
 std::tuple<std::unique_lock<std::mutex>, HANDLE> XenIfaceWorker::GetDevice() {
-    std::unique_lock lock(_state.Mutex);
-    return std::make_tuple(std::move(lock), _state.Device.get());
+    std::unique_lock lock(_mutex);
+    return std::make_tuple(std::move(lock), _device.get());
 }
 
-_Use_decl_annotations_ DWORD CALLBACK XenIfaceWorker::OnCmNotification(
-    HCMNOTIFICATION hNotify,
-    PVOID Context,
-    CM_NOTIFY_ACTION Action,
-    PCM_NOTIFY_EVENT_DATA EventData,
-    DWORD EventDataSize) {
-    auto self = static_cast<XenIfaceWorker *>(Context);
+_Use_decl_annotations_ DWORD CALLBACK XenIfaceWorker::CmNotifyCallback(
+    HCMNOTIFICATION notifyHandle,
+    PVOID context,
+    CM_NOTIFY_ACTION action,
+    PCM_NOTIFY_EVENT_DATA eventData,
+    DWORD eventDataSize) {
+    auto self = static_cast<XenIfaceWorker *>(context);
     FAIL_FAST_IF_NULL(self);
-    return self->OnCmNotification(hNotify, Action, EventData, EventDataSize);
+    return self->OnCmNotification(notifyHandle, action, eventData, eventDataSize);
 }
 
 _Use_decl_annotations_ DWORD XenIfaceWorker::OnCmNotification(
-    HCMNOTIFICATION hNotify,
-    CM_NOTIFY_ACTION Action,
-    PCM_NOTIFY_EVENT_DATA EventData,
-    DWORD EventDataSize) {
-    UNREFERENCED_PARAMETER(hNotify);
-    UNREFERENCED_PARAMETER(EventData);
-    UNREFERENCED_PARAMETER(EventDataSize);
+    HCMNOTIFICATION notifyHandle,
+    CM_NOTIFY_ACTION action,
+    PCM_NOTIFY_EVENT_DATA eventData,
+    DWORD eventDataSize) {
+    UNREFERENCED_PARAMETER(notifyHandle);
+    UNREFERENCED_PARAMETER(eventData);
+    UNREFERENCED_PARAMETER(eventDataSize);
 
     {
-        std::lock_guard lock(_state.Mutex);
-        switch (Action) {
+        std::lock_guard lock(_mutex);
+        switch (action) {
         case CM_NOTIFY_ACTION_DEVICEQUERYREMOVE:
         case CM_NOTIFY_ACTION_DEVICEQUERYREMOVEFAILED: {
             OutputDebugStringW(L"CM_NOTIFY_ACTION_DEVICEQUERYREMOVE");
-            _state.Device.reset();
+            _device.reset();
             break;
         }
         }
-        _state.Requests.emplace_back(Action);
+        _requests.emplace_back(action);
     }
-    _state.Signal.notify_one();
+    _signal.notify_one();
 
-    switch (Action) {
+    switch (action) {
     case CM_NOTIFY_ACTION_DEVICEREMOVEPENDING:
     case CM_NOTIFY_ACTION_DEVICEREMOVECOMPLETE: {
         OutputDebugStringW(L"CM_NOTIFY_ACTION_DEVICEREMOVEPENDING");
         // unregistering _deviceListener can only be done from worker thread
         std::thread([this]() {
             OutputDebugStringW(L"Unregistering listener");
-            std::unique_lock lock(_state.Mutex);
-            _state.Device.reset();
-            _state.DeviceListener.reset();
+            std::unique_lock lock(_mutex);
+            _device.reset();
+            _deviceListener.reset();
         }).detach();
         break;
     }
@@ -150,15 +150,15 @@ _Use_decl_annotations_ HRESULT XenIfaceWorker::RefreshDevices() {
     }
 
     OutputDebugStringW(L"Interface list:");
-    for (const auto &intf : interfaces) {
-        OutputDebugStringW(intf.c_str());
+    for (const auto &iface : interfaces) {
+        OutputDebugStringW(iface.c_str());
     }
 
-    if (_state.Device.is_valid()) {
+    if (_device.is_valid()) {
         OutputDebugStringW(L"Device valid, skipping refresh");
         return S_FALSE;
     }
-    _state.DeviceListener.reset();
+    _deviceListener.reset();
 
     auto [newDevice, err] = wil::try_open_file(interfaces[0].c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE);
     if (!newDevice.is_valid()) {
@@ -174,14 +174,14 @@ _Use_decl_annotations_ HRESULT XenIfaceWorker::RefreshDevices() {
         .Reserved = 0,
         .u = {.DeviceHandle = {.hTarget = newDevice.get()}},
     };
-    auto cr = CM_Register_Notification(&filter, this, &XenIfaceWorker::OnCmNotification, &_state.DeviceListener);
+    auto cr = CM_Register_Notification(&filter, this, &XenIfaceWorker::CmNotifyCallback, &_deviceListener);
     if (cr != CR_SUCCESS) {
         auto msg = std::format(L"CM_Register_Notification failed {}", cr);
         OutputDebugStringW(msg.c_str());
     }
     RETURN_IF_CR_FAILED(cr);
 
-    _state.Device = std::move(newDevice);
+    _device = std::move(newDevice);
 
     return S_OK;
 }
@@ -198,12 +198,12 @@ void XenIfaceWorker::WorkerFunc(std::stop_token stop) {
     };
 
     wil::unique_hcmnotification cmListener;
-    auto cr = CM_Register_Notification(&filter, this, &XenIfaceWorker::OnCmNotification, &cmListener);
+    auto cr = CM_Register_Notification(&filter, this, &XenIfaceWorker::CmNotifyCallback, &cmListener);
     if (cr != CR_SUCCESS)
         return;
 
     {
-        std::lock_guard lock(_state.Mutex);
+        std::lock_guard lock(_mutex);
         hr = RefreshDevices();
         if (FAILED(hr)) {
             auto msg = std::format(L"RefreshDevices failed {}", hr);
@@ -212,14 +212,14 @@ void XenIfaceWorker::WorkerFunc(std::stop_token stop) {
     }
 
     while (1) {
-        std::unique_lock lock(_state.Mutex);
-        _state.Signal.wait(lock);
+        std::unique_lock lock(_mutex);
+        _signal.wait(lock);
         if (stop.stop_requested())
             break;
 
-        while (!_state.Requests.empty()) {
-            auto request = _state.Requests.front();
-            _state.Requests.pop_front();
+        while (!_requests.empty()) {
+            auto request = _requests.front();
+            _requests.pop_front();
             switch (request) {
             case CM_NOTIFY_ACTION_DEVICEINTERFACEARRIVAL:
                 OutputDebugStringW(L"CM_NOTIFY_ACTION_DEVICEINTERFACEARRIVAL");

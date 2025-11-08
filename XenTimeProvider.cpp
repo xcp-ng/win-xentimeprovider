@@ -21,11 +21,12 @@ _Use_decl_annotations_ XenTimeProvider::XenTimeProvider(TimeProvSysCallbacks *ca
     : _callbacks(*callbacks), _worker() {}
 
 _Use_decl_annotations_ HRESULT XenTimeProvider::TimeJumped(TpcTimeJumpedArgs *args) {
+    UNREFERENCED_PARAMETER(args);
+
     _callbacks.pfnLogTimeProvEvent(
         LogTimeProvEventTypeInformation,
         const_cast<PWSTR>(XenTimeProviderName),
         const_cast<PWSTR>(L"XenTimeProvider::TimeJumped"));
-    UNREFERENCED_PARAMETER(args);
     _sample = std::nullopt;
     return S_OK;
 }
@@ -73,7 +74,7 @@ HRESULT XenTimeProvider::Shutdown() {
 // TODO find a better way to get the real host time
 // platform/timeoffset is not updated along with the real domain time offset
 static HRESULT GetXenTimeOffset(HANDLE handle, _Out_ long *offset) {
-    CHAR offsetString[16];
+    CHAR offsetString[12]; // LONG_MIN
     DWORD bytes;
 
     RETURN_IF_WIN32_BOOL_FALSE(DeviceIoControl(
@@ -85,6 +86,7 @@ static HRESULT GetXenTimeOffset(HANDLE handle, _Out_ long *offset) {
         sizeof(offsetString),
         &bytes,
         nullptr));
+    offsetString[sizeof(offsetString) - 1] = 0;
 
     errno = 0;
     *offset = strtol(offsetString, nullptr, 10);

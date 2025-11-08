@@ -23,19 +23,23 @@ HRESULT CALLBACK TimeProvCommand(_In_ TimeProvHandle hTimeProv, _In_ TimeProvCmd
     auto provider = static_cast<XenTimeProvider *>(hTimeProv);
     FAIL_FAST_IF_NULL(provider);
 
-    switch (eCmd) {
-    case TPC_TimeJumped:
-        return provider->TimeJumped(static_cast<TpcTimeJumpedArgs *>(pvArgs));
-    case TPC_GetSamples:
-        return provider->GetSamples(static_cast<TpcGetSamplesArgs *>(pvArgs));
-    case TPC_PollIntervalChanged:
-        return provider->PollIntervalChanged();
-    case TPC_UpdateConfig:
-        return provider->UpdateConfig();
-    case TPC_Shutdown:
-        return provider->Shutdown();
-    default:
-        return S_OK;
+    try {
+        switch (eCmd) {
+        case TPC_TimeJumped:
+            return provider->TimeJumped(static_cast<TpcTimeJumpedArgs *>(pvArgs));
+        case TPC_GetSamples:
+            return provider->GetSamples(static_cast<TpcGetSamplesArgs *>(pvArgs));
+        case TPC_PollIntervalChanged:
+            return provider->PollIntervalChanged();
+        case TPC_UpdateConfig:
+            return provider->UpdateConfig();
+        case TPC_Shutdown:
+            return provider->Shutdown();
+        default:
+            return S_OK;
+        }
+    } catch (...) {
+        return E_FAIL;
     }
 }
 
