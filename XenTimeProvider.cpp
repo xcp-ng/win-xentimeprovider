@@ -119,7 +119,7 @@ HRESULT XenTimeProvider::Update() {
     TimeSample sample{
         .dwSize = sizeof(TimeSample),
         .dwRefid = ' NEX',
-        .toOffset = static_cast<signed __int64>(xenTime - end),
+        .toOffset = static_cast<signed __int64>(xenTime - begin + delay / 2),
         .toDelay = delay,
         .tpDispersion = dispersion,
         .nSysTickCount = tickCount,
