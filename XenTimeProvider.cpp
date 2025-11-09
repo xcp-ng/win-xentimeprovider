@@ -14,9 +14,6 @@ enum LogTimeProvEventType : WORD {
     LogTimeProvEventTypeInformation = 3,
 };
 
-// TODO document
-static constexpr auto PlatformTimeOffsetPath = "platform/timeoffset";
-
 _Use_decl_annotations_ XenTimeProvider::XenTimeProvider(TimeProvSysCallbacks *callbacks)
     : _callbacks(*callbacks), _worker() {}
 
@@ -71,48 +68,25 @@ HRESULT XenTimeProvider::Shutdown() {
     return S_OK;
 }
 
-// TODO find a better way to get the real host time
-// platform/timeoffset is not updated along with the real domain time offset
-static HRESULT GetXenTimeOffset(HANDLE handle, _Out_ long *offset) {
-    CHAR offsetString[12]; // LONG_MIN
+static HRESULT GetXenHostTime(_In_ HANDLE handle, _Out_ unsigned __int64 *xenTime, _Out_ unsigned __int64 *dispersion) {
+    XENIFACE_SHAREDINFO_GET_HOST_TIME_OUT time;
     DWORD bytes;
 
     RETURN_IF_WIN32_BOOL_FALSE(DeviceIoControl(
         handle,
-        IOCTL_XENIFACE_STORE_READ,
-        const_cast<PCHAR>(PlatformTimeOffsetPath),
-        static_cast<DWORD>(strlen(PlatformTimeOffsetPath) + 1),
-        offsetString,
-        sizeof(offsetString),
+        IOCTL_XENIFACE_SHAREDINFO_GET_HOST_TIME,
+        nullptr,
+        0,
+        &time,
+        sizeof(time),
         &bytes,
         nullptr));
-    offsetString[sizeof(offsetString) - 1] = 0;
-
-    errno = 0;
-    *offset = strtol(offsetString, nullptr, 10);
-    if (errno != 0)
-        return E_FAIL;
-
-    return S_OK;
-}
-
-static HRESULT GetXenTimeSystem(
-    _In_ HANDLE handle,
-    _In_ long offset,
-    _Out_ unsigned __int64 *xenTime,
-    _Out_ unsigned __int64 *dispersion) {
-    XENIFACE_SHAREDINFO_GET_TIME_OUT time;
-    DWORD bytes;
-
-    RETURN_IF_WIN32_BOOL_FALSE(
-        DeviceIoControl(handle, IOCTL_XENIFACE_SHAREDINFO_GET_TIME, nullptr, 0, &time, sizeof(time), &bytes, nullptr));
 
     auto value = static_cast<unsigned __int64>(time.Time.dwHighDateTime) << 32 |
         static_cast<unsigned __int64>(time.Time.dwLowDateTime);
-    value -= TIME_S(static_cast<signed __int64>(offset));
 
-    *dispersion = 0;
     *xenTime = value;
+    *dispersion = 0;
 
     return S_OK;
 }
@@ -122,9 +96,6 @@ HRESULT XenTimeProvider::Update() {
     auto [lock, handle] = _worker.GetDevice();
     if (!handle || handle == INVALID_HANDLE_VALUE)
         return E_PENDING;
-
-    long offset;
-    RETURN_IF_FAILED(GetXenTimeOffset(handle, &offset));
 
     unsigned __int64 tickCount;
     RETURN_IF_FAILED(_callbacks.pfnGetTimeSysInfo(TSI_TickCount, &tickCount));
@@ -136,7 +107,7 @@ HRESULT XenTimeProvider::Update() {
     RETURN_IF_FAILED(_callbacks.pfnGetTimeSysInfo(TSI_CurrentTime, &begin));
 
     unsigned __int64 xenTime, dispersion;
-    RETURN_IF_FAILED(GetXenTimeSystem(handle, offset, &xenTime, &dispersion));
+    RETURN_IF_FAILED(GetXenHostTime(handle, &xenTime, &dispersion));
 
     unsigned __int64 end;
     RETURN_IF_FAILED(_callbacks.pfnGetTimeSysInfo(TSI_CurrentTime, &end));
