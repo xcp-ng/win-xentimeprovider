@@ -45,7 +45,7 @@ static HRESULT GetDeviceInterfaceList(
         cr = CM_Get_Device_Interface_List_Size(&devListLen, const_cast<LPGUID>(interfaceClassGuid), nullptr, flags);
         if (cr != CR_SUCCESS) {
             auto msg = std::format(L"CM_Get_Device_Interface_List_Size failed {}", cr);
-            OutputDebugStringW(msg.c_str());
+            OutputDebugString(msg.c_str());
         }
         RETURN_IF_CR_FAILED(cr);
 
@@ -60,7 +60,7 @@ static HRESULT GetDeviceInterfaceList(
     } while (cr == CR_BUFFER_SMALL);
     if (cr != CR_SUCCESS) {
         auto msg = std::format(L"CM_Get_Device_Interface_List failed {}", cr);
-        OutputDebugStringW(msg.c_str());
+        OutputDebugString(msg.c_str());
     }
     RETURN_IF_CR_FAILED(cr);
 
@@ -105,7 +105,7 @@ _Use_decl_annotations_ DWORD XenIfaceWorker::OnCmNotification(
         switch (action) {
         case CM_NOTIFY_ACTION_DEVICEQUERYREMOVE:
         case CM_NOTIFY_ACTION_DEVICEQUERYREMOVEFAILED: {
-            OutputDebugStringW(L"CM_NOTIFY_ACTION_DEVICEQUERYREMOVE");
+            OutputDebugString(L"CM_NOTIFY_ACTION_DEVICEQUERYREMOVE");
             _device.reset();
             break;
         }
@@ -117,10 +117,10 @@ _Use_decl_annotations_ DWORD XenIfaceWorker::OnCmNotification(
     switch (action) {
     case CM_NOTIFY_ACTION_DEVICEREMOVEPENDING:
     case CM_NOTIFY_ACTION_DEVICEREMOVECOMPLETE: {
-        OutputDebugStringW(L"CM_NOTIFY_ACTION_DEVICEREMOVEPENDING");
+        OutputDebugString(L"CM_NOTIFY_ACTION_DEVICEREMOVEPENDING");
         // unregistering _deviceListener can only be done from worker thread
         std::thread([this]() {
-            OutputDebugStringW(L"Unregistering listener");
+            OutputDebugString(L"Unregistering listener");
             std::unique_lock lock(_mutex);
             _device.reset();
             _deviceListener.reset();
@@ -133,29 +133,29 @@ _Use_decl_annotations_ DWORD XenIfaceWorker::OnCmNotification(
 }
 
 _Use_decl_annotations_ HRESULT XenIfaceWorker::RefreshDevices() {
-    OutputDebugStringW(L"XenIfaceWorker::RefreshDevices");
+    OutputDebugString(L"XenIfaceWorker::RefreshDevices");
 
     std::vector<WCHAR> buffer;
     auto hr = GetDeviceInterfaceList(buffer, &GUID_INTERFACE_XENIFACE, nullptr, CM_GET_DEVICE_INTERFACE_LIST_PRESENT);
     if (FAILED(hr)) {
         auto msg = std::format(L"GetDeviceInterfaceList failed {}", hr);
-        OutputDebugStringW(msg.c_str());
+        OutputDebugString(msg.c_str());
     }
     RETURN_IF_FAILED(hr);
 
     auto interfaces = ParseMultiStrings(buffer.data(), buffer.size());
     if (interfaces.size() == 0) {
-        OutputDebugStringW(L"Interface list empty");
+        OutputDebugString(L"Interface list empty");
         return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
     }
 
-    OutputDebugStringW(L"Interface list:");
+    OutputDebugString(L"Interface list:");
     for (const auto &iface : interfaces) {
-        OutputDebugStringW(iface.c_str());
+        OutputDebugString(iface.c_str());
     }
 
     if (_device.is_valid()) {
-        OutputDebugStringW(L"Device valid, skipping refresh");
+        OutputDebugString(L"Device valid, skipping refresh");
         return S_FALSE;
     }
     _deviceListener.reset();
@@ -163,7 +163,7 @@ _Use_decl_annotations_ HRESULT XenIfaceWorker::RefreshDevices() {
     auto [newDevice, err] = wil::try_open_file(interfaces[0].c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE);
     if (!newDevice.is_valid()) {
         auto msg = std::format(L"open({}) failed {}", interfaces[0], err);
-        OutputDebugStringW(msg.c_str());
+        OutputDebugString(msg.c_str());
     }
     RETURN_HR_IF(HRESULT_FROM_WIN32(err), !newDevice.is_valid());
 
@@ -177,7 +177,7 @@ _Use_decl_annotations_ HRESULT XenIfaceWorker::RefreshDevices() {
     auto cr = CM_Register_Notification(&filter, this, &XenIfaceWorker::CmNotifyCallback, &_deviceListener);
     if (cr != CR_SUCCESS) {
         auto msg = std::format(L"CM_Register_Notification failed {}", cr);
-        OutputDebugStringW(msg.c_str());
+        OutputDebugString(msg.c_str());
     }
     RETURN_IF_CR_FAILED(cr);
 
@@ -207,7 +207,7 @@ void XenIfaceWorker::WorkerFunc(std::stop_token stop) {
         hr = RefreshDevices();
         if (FAILED(hr)) {
             auto msg = std::format(L"RefreshDevices failed {}", hr);
-            OutputDebugStringW(msg.c_str());
+            OutputDebugString(msg.c_str());
         }
     }
 
@@ -222,11 +222,11 @@ void XenIfaceWorker::WorkerFunc(std::stop_token stop) {
             _requests.pop_front();
             switch (request) {
             case CM_NOTIFY_ACTION_DEVICEINTERFACEARRIVAL:
-                OutputDebugStringW(L"CM_NOTIFY_ACTION_DEVICEINTERFACEARRIVAL");
+                OutputDebugString(L"CM_NOTIFY_ACTION_DEVICEINTERFACEARRIVAL");
                 hr = RefreshDevices();
                 if (FAILED(hr)) {
                     auto msg = std::format(L"RefreshDevices failed {}", hr);
-                    OutputDebugStringW(msg.c_str());
+                    OutputDebugString(msg.c_str());
                 }
                 break;
             }
