@@ -18,13 +18,13 @@ public:
     XenIfaceWorker &operator=(const XenIfaceWorker &) = delete;
 
     std::tuple<std::unique_lock<std::mutex>, HANDLE> GetDevice();
-    std::wstring GetDevicePath();
+    _Requires_exclusive_lock_held_(_mutex) std::wstring LockedGetDevicePath(const std::unique_lock<std::mutex> &);
 
     ~XenIfaceWorker();
 
 private:
     void WorkerFunc(std::stop_token stop);
-    _Requires_lock_held_(_mutex) HRESULT RefreshDevices();
+    _Requires_exclusive_lock_held_(_mutex) HRESULT RefreshDevices();
 
     _Pre_satisfies_(eventDataSize >= sizeof(CM_NOTIFY_EVENT_DATA)) static DWORD CALLBACK CmNotifyCallback(
         _In_ HCMNOTIFICATION notifyHandle,

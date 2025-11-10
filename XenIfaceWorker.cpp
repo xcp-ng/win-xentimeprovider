@@ -80,8 +80,7 @@ std::tuple<std::unique_lock<std::mutex>, HANDLE> XenIfaceWorker::GetDevice() {
     return std::make_tuple(std::move(lock), _device.get());
 }
 
-std::wstring XenIfaceWorker::GetDevicePath() {
-    std::lock_guard lock(_mutex);
+_Use_decl_annotations_ std::wstring XenIfaceWorker::LockedGetDevicePath(const std::unique_lock<std::mutex> &) {
     return std::wstring(_devicePath);
 }
 

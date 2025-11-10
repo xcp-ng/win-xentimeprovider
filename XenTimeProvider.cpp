@@ -128,7 +128,7 @@ HRESULT XenTimeProvider::Update() {
         .nStratum = 0,
         .dwTSFlags = TSF_Hardware,
     };
-    auto devicePath = _worker.GetDevicePath();
+    auto devicePath = _worker.LockedGetDevicePath(lock);
     FAIL_FAST_IF(wcsncpy_s(sample.wszUniqueName, devicePath.c_str(), _TRUNCATE));
     _sample = sample;
 
