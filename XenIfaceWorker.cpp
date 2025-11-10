@@ -102,31 +102,15 @@ _Use_decl_annotations_ DWORD XenIfaceWorker::OnCmNotification(
         std::lock_guard lock(_mutex);
         switch (action) {
         case CM_NOTIFY_ACTION_DEVICEQUERYREMOVE:
-        case CM_NOTIFY_ACTION_DEVICEQUERYREMOVEFAILED: {
-            OutputDebugStringA("CM_NOTIFY_ACTION_DEVICEQUERYREMOVE");
+        case CM_NOTIFY_ACTION_DEVICEQUERYREMOVEFAILED:
+            // Must close immediately to avoid failing DEVICEQUERYREMOVE
+            OutputDebugStringA("CM_NOTIFY_ACTION_DEVICEQUERYREMOVE/FAILED");
             _device.reset();
             break;
-        }
         }
         _requests.emplace_back(action);
     }
     _signal.notify_one();
-
-    switch (action) {
-    case CM_NOTIFY_ACTION_DEVICEREMOVEPENDING:
-    case CM_NOTIFY_ACTION_DEVICEREMOVECOMPLETE: {
-        OutputDebugStringA("CM_NOTIFY_ACTION_DEVICEREMOVEPENDING");
-        // unregistering _deviceListener can only be done from worker thread
-        std::thread([this]() {
-            OutputDebugStringA("Unregistering listener");
-            std::unique_lock lock(_mutex);
-            _device.reset();
-            _deviceListener.reset();
-            _devicePath.clear();
-        }).detach();
-        break;
-    }
-    }
 
     return ERROR_SUCCESS;
 }
@@ -218,6 +202,14 @@ void XenIfaceWorker::WorkerFunc(std::stop_token stop) {
                 hr = RefreshDevices();
                 if (FAILED(hr))
                     DebugLog("RefreshDevices failed %x", hr);
+                break;
+
+            case CM_NOTIFY_ACTION_DEVICEREMOVEPENDING:
+            case CM_NOTIFY_ACTION_DEVICEREMOVECOMPLETE:
+                OutputDebugStringA("CM_NOTIFY_ACTION_DEVICEREMOVEPENDING");
+                _device.reset();
+                _deviceListener.reset();
+                _devicePath.clear();
                 break;
             }
         }
