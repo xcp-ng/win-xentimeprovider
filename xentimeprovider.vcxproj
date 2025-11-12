@@ -100,6 +100,7 @@
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="guids.cpp" />
     <ClCompile Include="Logging.cpp" />
+    <ClCompile Include="TimeConverter.cpp" />
     <ClCompile Include="XenIfaceWorker.cpp" />
     <ClCompile Include="XenTimeProvider.cpp" />
   </ItemGroup>
@@ -111,6 +112,7 @@
   <ItemGroup>
     <ClInclude Include="Globals.hpp" />
     <ClInclude Include="Logging.hpp" />
+    <ClInclude Include="TimeConverter.hpp" />
     <ClInclude Include="XenIfaceWorker.hpp" />
     <ClInclude Include="xeniface_ioctls.h" />
     <ClInclude Include="XenTimeProvider.hpp" />

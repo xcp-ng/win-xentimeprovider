@@ -2,7 +2,9 @@
 #include <windows.h>
 #include <winioctl.h>
 
+#include "Globals.hpp"
 #include "XenTimeProvider.hpp"
+#include "TimeConverter.hpp"
 
 #include "xeniface_ioctls.h"
 
@@ -55,13 +57,17 @@ HRESULT XenTimeProvider::Shutdown() {
     return S_OK;
 }
 
-static HRESULT GetXenHostTime(_In_ HANDLE handle, _Out_ unsigned __int64 *xenTime, _Out_ unsigned __int64 *dispersion) {
+static HRESULT GetXenTime(
+    _In_ HANDLE handle,
+    _In_ bool getHostTime,
+    _Out_ unsigned __int64 *xenTime,
+    _Out_ unsigned __int64 *dispersion) {
     XENIFACE_SHAREDINFO_GET_HOST_TIME_OUT time;
     DWORD bytes;
 
     RETURN_IF_WIN32_BOOL_FALSE(DeviceIoControl(
         handle,
-        IOCTL_XENIFACE_SHAREDINFO_GET_HOST_TIME,
+        getHostTime ? IOCTL_XENIFACE_SHAREDINFO_GET_HOST_TIME : IOCTL_XENIFACE_SHAREDINFO_GET_TIME,
         nullptr,
         0,
         &time,
@@ -69,11 +75,23 @@ static HRESULT GetXenHostTime(_In_ HANDLE handle, _Out_ unsigned __int64 *xenTim
         &bytes,
         nullptr));
 
-    auto value = static_cast<unsigned __int64>(time.Time.dwHighDateTime) << 32 |
-        static_cast<unsigned __int64>(time.Time.dwLowDateTime);
+    if (!getHostTime) {
+        auto value = static_cast<unsigned __int64>(time.Time.dwHighDateTime) << 32 |
+            static_cast<unsigned __int64>(time.Time.dwLowDateTime);
 
-    *xenTime = value;
-    *dispersion = 0;
+        *xenTime = value;
+        *dispersion = 0;
+    } else {
+        FILETIME universalTime;
+        RETURN_IF_WIN32_BOOL_FALSE(
+            TimeConvertFileTime(&time.Time, &universalTime, TimeConvertLocalToUniversal, nullptr));
+        auto value = static_cast<unsigned __int64>(time.Time.dwHighDateTime) << 32 |
+            static_cast<unsigned __int64>(time.Time.dwLowDateTime);
+
+        *xenTime = value;
+        // inherent inaccuracy of TimeConvertFileTime
+        *dispersion = TIME_MS(1);
+    }
 
     return S_OK;
 }
@@ -94,7 +112,23 @@ HRESULT XenTimeProvider::Update() {
     RETURN_IF_FAILED(_callbacks.pfnGetTimeSysInfo(TSI_CurrentTime, &begin));
 
     unsigned __int64 xenTime, dispersion;
-    RETURN_IF_FAILED(GetXenHostTime(handle, &xenTime, &dispersion));
+    if (!_host_time_not_supported) {
+        auto hr = GetXenTime(handle, true, &xenTime, &dispersion);
+        if (hr == HRESULT_FROM_WIN32(ERROR_INVALID_FUNCTION) || hr == HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED)) {
+            _callbacks.pfnLogTimeProvEvent(
+                LogTimeProvEventTypeError,
+                const_cast<PWSTR>(XenTimeProviderName),
+                const_cast<PWSTR>(L"The Xen PV interface driver has indicated that Xen host time is not supported. "
+                                  L"Falling back to guest time; reliability issues are likely."));
+            _host_time_not_supported = true;
+            // retry right here and not later, otherwise we get a prefast warning
+            RETURN_IF_FAILED(GetXenTime(handle, false, &xenTime, &dispersion));
+        } else {
+            RETURN_IF_FAILED(hr);
+        }
+    } else {
+        RETURN_IF_FAILED(GetXenTime(handle, false, &xenTime, &dispersion));
+    }
 
     unsigned __int64 end;
     RETURN_IF_FAILED(_callbacks.pfnGetTimeSysInfo(TSI_CurrentTime, &end));

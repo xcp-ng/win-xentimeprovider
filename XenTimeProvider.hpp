@@ -41,4 +41,5 @@ private:
     TimeProvSysCallbacks _callbacks;
     XenIfaceWorker _worker;
     std::optional<TimeSample> _sample;
+    bool _host_time_not_supported = false;
 };
