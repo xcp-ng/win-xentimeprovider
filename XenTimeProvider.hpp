@@ -29,6 +29,7 @@ public:
 
 private:
     HRESULT Update();
+    HRESULT GetTimeOrFallback(_In_ HANDLE handle, _Out_ unsigned __int64 *xenTime, _Out_ unsigned __int64 *dispersion);
 
     void Log(LogTimeProvEventType level, PCWSTR format, ...) {
         va_list args;
@@ -41,5 +42,7 @@ private:
     TimeProvSysCallbacks _callbacks;
     XenIfaceWorker _worker;
     std::optional<TimeSample> _sample;
-    bool _host_time_not_supported = false;
+
+    bool _allow_fallback = false;
+    bool _need_fallback = false;
 };
