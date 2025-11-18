@@ -79,7 +79,6 @@ HRESULT XenTimeProvider::Shutdown() {
 static HRESULT GetXenTime(_In_ HANDLE handle, _Out_ unsigned __int64 *xenTime, _Out_ unsigned __int64 *dispersion) {
     XENIFACE_SHAREDINFO_GET_TIME_OUT buffer;
     DWORD dummy;
-    FILETIME universalTime;
 
     RETURN_IF_WIN32_BOOL_FALSE(DeviceIoControl(
         handle,
@@ -91,13 +90,24 @@ static HRESULT GetXenTime(_In_ HANDLE handle, _Out_ unsigned __int64 *xenTime, _
         &dummy,
         nullptr));
 
-    RETURN_IF_WIN32_BOOL_FALSE(TimeConvertFileTime(&buffer.Time, &universalTime, TimeConvertLocalToUniversal, nullptr));
-    auto value = static_cast<unsigned __int64>(universalTime.dwHighDateTime) << 32 |
-        static_cast<unsigned __int64>(universalTime.dwLowDateTime);
+    if (buffer.Local) {
+        FILETIME universalTime;
 
-    *xenTime = value;
-    // inherent inaccuracy of TimeConvertFileTime
-    *dispersion = TIME_MS(1);
+        RETURN_IF_WIN32_BOOL_FALSE(
+            TimeConvertFileTime(&buffer.Time, &universalTime, TimeConvertLocalToUniversal, nullptr));
+        auto value = static_cast<unsigned __int64>(universalTime.dwHighDateTime) << 32 |
+            static_cast<unsigned __int64>(universalTime.dwLowDateTime);
+
+        *xenTime = value;
+        // inherent inaccuracy of TimeConvertFileTime
+        *dispersion = TIME_MS(1);
+    } else {
+        auto value = static_cast<unsigned __int64>(buffer.Time.dwHighDateTime) << 32 |
+            static_cast<unsigned __int64>(buffer.Time.dwLowDateTime);
+
+        *xenTime = value;
+        *dispersion = 0;
+    }
 
     return S_OK;
 }
