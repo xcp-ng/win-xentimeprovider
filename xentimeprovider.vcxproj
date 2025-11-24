@@ -68,6 +68,12 @@
     <Link>
       <ModuleDefinitionFile>xentimeprovider.def</ModuleDefinitionFile>
     </Link>
+    <PreBuildEvent>
+      <Command>$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe -noprofile -noninteractive -executionpolicy bypass $(ProjectDir)scripts\genfiles.ps1 -ProjectDir $(ProjectDir)</Command>
+    </PreBuildEvent>
+    <PostBuildEvent>
+      <Command>$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe -noprofile -noninteractive -executionpolicy bypass $(ProjectDir)scripts\sign.ps1 -ProjectDir $(ProjectDir) -Configuration $(Configuration) -Platform $(Platform)</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -77,6 +83,12 @@
     <Link>
       <ModuleDefinitionFile>xentimeprovider.def</ModuleDefinitionFile>
     </Link>
+    <PreBuildEvent>
+      <Command>$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe -noprofile -noninteractive -executionpolicy bypass $(ProjectDir)scripts\genfiles.ps1 -ProjectDir $(ProjectDir)</Command>
+    </PreBuildEvent>
+    <PostBuildEvent>
+      <Command>$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe -noprofile -noninteractive -executionpolicy bypass $(ProjectDir)scripts\sign.ps1 -ProjectDir $(ProjectDir) -Configuration $(Configuration) -Platform $(Platform)</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -86,6 +98,12 @@
     <Link>
       <ModuleDefinitionFile>xentimeprovider.def</ModuleDefinitionFile>
     </Link>
+    <PreBuildEvent>
+      <Command>$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe -noprofile -noninteractive -executionpolicy bypass $(ProjectDir)scripts\genfiles.ps1 -ProjectDir $(ProjectDir)</Command>
+    </PreBuildEvent>
+    <PostBuildEvent>
+      <Command>$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe -noprofile -noninteractive -executionpolicy bypass $(ProjectDir)scripts\sign.ps1 -ProjectDir $(ProjectDir) -Configuration $(Configuration) -Platform $(Platform)</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -95,6 +113,12 @@
     <Link>
       <ModuleDefinitionFile>xentimeprovider.def</ModuleDefinitionFile>
     </Link>
+    <PreBuildEvent>
+      <Command>$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe -noprofile -noninteractive -executionpolicy bypass $(ProjectDir)scripts\genfiles.ps1 -ProjectDir $(ProjectDir)</Command>
+    </PreBuildEvent>
+    <PostBuildEvent>
+      <Command>$(SystemRoot)\System32\WindowsPowerShell\v1.0\powershell.exe -noprofile -noninteractive -executionpolicy bypass $(ProjectDir)scripts\sign.ps1 -ProjectDir $(ProjectDir) -Configuration $(Configuration) -Platform $(Platform)</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp" />
@@ -112,10 +136,14 @@
   <ItemGroup>
     <ClInclude Include="Globals.hpp" />
     <ClInclude Include="Logging.hpp" />
+    <ClInclude Include="resource.h" />
     <ClInclude Include="TimeConverter.hpp" />
     <ClInclude Include="XenIfaceWorker.hpp" />
     <ClInclude Include="xeniface_ioctls.h" />
     <ClInclude Include="XenTimeProvider.hpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Resource.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
