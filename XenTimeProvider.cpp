@@ -20,9 +20,10 @@
 
 #define XENSTORE_PAYLOAD_MAX 4096
 
-XenTimeProvider::XenTimeProvider(_In_ TimeProvSysCallbacks *callbacks) : _callbacks(*callbacks), _worker() {
-    _worker.RegisterResume([this] {});
+XenTimeProvider::XenTimeProvider(_In_ TimeProvSysCallbacks *callbacks) : _callbacks(*callbacks) {
     UpdateConfig();
+    _worker = std::make_unique<XenIfaceWorker>();
+    _worker->RegisterResume([this] {});
 }
 
 HRESULT XenTimeProvider::TimeJumped(_In_ TpcTimeJumpedArgs *args) {
@@ -64,7 +65,8 @@ HRESULT XenTimeProvider::UpdateConfig() {
 }
 
 HRESULT XenTimeProvider::Shutdown() {
-    Log(LogTimeProvEventTypeInformation, L"Shutdown");
+    _worker.reset();
+    _sample = std::nullopt;
     return S_OK;
 }
 
@@ -157,7 +159,11 @@ XenTimeProvider::GetTime(_In_ HANDLE handle, _Out_ unsigned __int64 *xenTime, _O
 
 HRESULT XenTimeProvider::Update() {
     _sample = std::nullopt;
-    auto [lock, handle, path] = _worker.GetDevice();
+
+    if (!_worker)
+        return E_PENDING;
+
+    auto [lock, handle, path] = _worker->GetDevice();
     if (!handle || handle == INVALID_HANDLE_VALUE)
         return E_PENDING;
 

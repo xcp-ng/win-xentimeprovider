@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <memory>
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -41,6 +42,6 @@ private:
     }
 
     TimeProvSysCallbacks _callbacks;
-    XenIfaceWorker _worker;
+    std::unique_ptr<XenIfaceWorker> _worker;
     std::optional<TimeSample> _sample;
 };
