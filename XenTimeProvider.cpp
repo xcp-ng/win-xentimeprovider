@@ -1,3 +1,7 @@
+#include <string>
+#include <vector>
+#include <charconv>
+
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <winioctl.h>
@@ -13,6 +17,8 @@
 #define TIME_US(_us) ((_us) * 10)
 #define TIME_MS(_ms) (TIME_US((_ms) * 1000))
 #define TIME_S(_s) (TIME_MS((_s) * 1000))
+
+#define XENSTORE_PAYLOAD_MAX 4096
 
 XenTimeProvider::XenTimeProvider(_In_ TimeProvSysCallbacks *callbacks) : _callbacks(*callbacks), _worker() {
     _worker.RegisterResume([this] {});
@@ -52,22 +58,7 @@ HRESULT XenTimeProvider::PollIntervalChanged() {
 }
 
 HRESULT XenTimeProvider::UpdateConfig() {
-    HRESULT hr;
-
     Log(LogTimeProvEventTypeInformation, L"UpdateConfig");
-
-    _allow_fallback = false;
-    _need_fallback = false;
-    DWORD value;
-    hr = wil::reg::get_value_dword_nothrow(
-        HKEY_LOCAL_MACHINE,
-        L"SYSTEM\\CurrentControlSet\\Services\\W32Time\\TimeProviders\\" XenTimeProviderName L"\\Parameters",
-        L"AllowFallback",
-        &value);
-    if (SUCCEEDED(hr))
-        _allow_fallback = value;
-    else if (hr != __HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND))
-        return hr;
 
     return S_OK;
 }
@@ -81,49 +72,40 @@ void XenTimeProvider::OnResume() {
     _callbacks.pfnAlertSamplesAvail();
 }
 
-static HRESULT GetXenTime(_In_ HANDLE handle, _Out_ unsigned __int64 *xenTime, _Out_ unsigned __int64 *dispersion) {
+static HRESULT StoreRead(_In_ HANDLE handle, _In_ PCSTR path, _Out_ std::string &out) {
+    std::vector<char> buffer(XENSTORE_PAYLOAD_MAX);
+    auto pathlen = strlen(path) + 1;
+    DWORD size;
+
+    RETURN_IF_WIN32_BOOL_FALSE(DeviceIoControl(
+        handle,
+        IOCTL_XENIFACE_STORE_READ,
+        const_cast<LPVOID>(static_cast<PCVOID>(path)),
+        static_cast<DWORD>(pathlen),
+        buffer.data(),
+        static_cast<DWORD>(buffer.size()),
+        &size,
+        nullptr));
+    buffer.back() = 0;
+    out = std::string(buffer.data());
+    return S_OK;
+}
+
+static HRESULT StringToInt64(const std::string &str, _Out_ int64_t &val) {
+    auto [ptr, ec] = std::from_chars(&*str.begin(), &*str.end(), val);
+    if (ptr != &*str.end() || ec != std::errc())
+        return E_FAIL;
+    return S_OK;
+}
+
+static HRESULT
+GetXenOffsetTime(_In_ HANDLE handle, _Out_ unsigned __int64 *xenTime, _Out_ unsigned __int64 *dispersion) {
     XENIFACE_SHAREDINFO_GET_TIME_OUT buffer;
     DWORD dummy;
 
     RETURN_IF_WIN32_BOOL_FALSE(DeviceIoControl(
         handle,
         IOCTL_XENIFACE_SHAREDINFO_GET_TIME,
-        nullptr,
-        0,
-        &buffer,
-        sizeof(buffer),
-        &dummy,
-        nullptr));
-
-    if (buffer.Local) {
-        FILETIME universalTime;
-
-        RETURN_IF_WIN32_BOOL_FALSE(
-            TimeConvertFileTime(&buffer.Time, &universalTime, TimeConvertLocalToUniversal, nullptr));
-        auto value = static_cast<unsigned __int64>(universalTime.dwHighDateTime) << 32 |
-            static_cast<unsigned __int64>(universalTime.dwLowDateTime);
-
-        *xenTime = value;
-        // inherent inaccuracy of TimeConvertFileTime
-        *dispersion = TIME_MS(1);
-    } else {
-        auto value = static_cast<unsigned __int64>(buffer.Time.dwHighDateTime) << 32 |
-            static_cast<unsigned __int64>(buffer.Time.dwLowDateTime);
-
-        *xenTime = value;
-        *dispersion = 0;
-    }
-
-    return S_OK;
-}
-
-static HRESULT GetXenHostTime(_In_ HANDLE handle, _Out_ unsigned __int64 *xenTime, _Out_ unsigned __int64 *dispersion) {
-    XENIFACE_SHAREDINFO_GET_HOST_TIME_OUT buffer;
-    DWORD dummy;
-
-    RETURN_IF_WIN32_BOOL_FALSE(DeviceIoControl(
-        handle,
-        IOCTL_XENIFACE_SHAREDINFO_GET_HOST_TIME,
         nullptr,
         0,
         &buffer,
@@ -140,31 +122,37 @@ static HRESULT GetXenHostTime(_In_ HANDLE handle, _Out_ unsigned __int64 *xenTim
     return S_OK;
 }
 
-HRESULT XenTimeProvider::GetTimeOrFallback(
-    _In_ HANDLE handle,
-    _Out_ unsigned __int64 *xenTime,
-    _Out_ unsigned __int64 *dispersion) {
-    if (!_allow_fallback) {
-        return GetXenHostTime(handle, xenTime, dispersion);
-    } else if (!_need_fallback) {
-        auto hr = GetXenHostTime(handle, xenTime, dispersion);
-        switch (hr) {
-        case __HRESULT_FROM_WIN32(ERROR_INVALID_FUNCTION):
-        case __HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED):
-            _callbacks.pfnLogTimeProvEvent(
-                LogTimeProvEventTypeError,
-                const_cast<PWSTR>(XenTimeProviderName),
-                const_cast<PWSTR>(L"The Xen PV interface driver has indicated that Xen host time is not supported. "
-                                  L"Falling back to guest time; reliability issues are likely."));
-            _need_fallback = true;
-            // retry right here and not later, just to avoid a prefast warning
-            return GetXenTime(handle, xenTime, dispersion);
-        default:
-            return hr;
-        }
-    } else {
-        return GetXenTime(handle, xenTime, dispersion);
-    }
+HRESULT
+XenTimeProvider::GetTime(_In_ HANDLE handle, _Out_ unsigned __int64 *xenTime, _Out_ unsigned __int64 *dispersion) {
+    unsigned __int64 offsetTime, totalDispersion;
+    HRESULT hr;
+
+    std::string vmPath;
+    RETURN_IF_FAILED(StoreRead(handle, "vm", vmPath));
+    if (vmPath.empty())
+        return HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED);
+    if (vmPath.back() != '/')
+        vmPath += '/';
+    vmPath += "rtc/timeoffset";
+
+    std::string tmp;
+    int64_t timeOffsetPre, timeOffsetPost;
+
+    RETURN_IF_FAILED(StoreRead(handle, vmPath.c_str(), tmp));
+    RETURN_IF_FAILED(StringToInt64(tmp, timeOffsetPre));
+
+    hr = GetXenOffsetTime(handle, &offsetTime, &totalDispersion);
+    RETURN_IF_FAILED(hr);
+
+    RETURN_IF_FAILED(StoreRead(handle, vmPath.c_str(), tmp));
+    RETURN_IF_FAILED(StringToInt64(tmp, timeOffsetPost));
+
+    if (timeOffsetPre != timeOffsetPost)
+        return E_PENDING;
+
+    *xenTime = offsetTime - TIME_S(timeOffsetPost);
+    *dispersion = totalDispersion;
+    return S_OK;
 }
 
 HRESULT XenTimeProvider::Update() {
@@ -183,7 +171,7 @@ HRESULT XenTimeProvider::Update() {
     RETURN_IF_FAILED(_callbacks.pfnGetTimeSysInfo(TSI_CurrentTime, &begin));
 
     unsigned __int64 xenTime, dispersion;
-    RETURN_IF_FAILED(GetTimeOrFallback(handle, &xenTime, &dispersion));
+    RETURN_IF_FAILED(GetTime(handle, &xenTime, &dispersion));
 
     unsigned __int64 end;
     RETURN_IF_FAILED(_callbacks.pfnGetTimeSysInfo(TSI_CurrentTime, &end));
