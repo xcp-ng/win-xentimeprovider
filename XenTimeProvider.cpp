@@ -15,6 +15,7 @@
 #define TIME_S(_s) (TIME_MS((_s) * 1000))
 
 XenTimeProvider::XenTimeProvider(_In_ TimeProvSysCallbacks *callbacks) : _callbacks(*callbacks), _worker() {
+    _worker.RegisterResume([this] {});
     UpdateConfig();
 }
 
@@ -74,6 +75,10 @@ HRESULT XenTimeProvider::UpdateConfig() {
 HRESULT XenTimeProvider::Shutdown() {
     Log(LogTimeProvEventTypeInformation, L"Shutdown");
     return S_OK;
+}
+
+void XenTimeProvider::OnResume() {
+    _callbacks.pfnAlertSamplesAvail();
 }
 
 static HRESULT GetXenTime(_In_ HANDLE handle, _Out_ unsigned __int64 *xenTime, _Out_ unsigned __int64 *dispersion) {

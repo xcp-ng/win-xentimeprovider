@@ -28,6 +28,7 @@ public:
     }
 
 private:
+    void OnResume();
     HRESULT Update();
     HRESULT GetTimeOrFallback(_In_ HANDLE handle, _Out_ unsigned __int64 *xenTime, _Out_ unsigned __int64 *dispersion);
 
