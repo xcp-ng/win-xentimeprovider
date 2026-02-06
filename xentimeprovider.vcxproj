@@ -134,9 +134,11 @@
     <None Include="xentimeprovider.def" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Borrowed.hpp" />
     <ClInclude Include="Globals.hpp" />
     <ClInclude Include="Logging.hpp" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="ResumeNotifier.hpp" />
     <ClInclude Include="TimeConverter.hpp" />
     <ClInclude Include="XenIfaceWorker.hpp" />
     <ClInclude Include="xeniface_ioctls.h" />
