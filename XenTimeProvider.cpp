@@ -23,7 +23,7 @@
 XenTimeProvider::XenTimeProvider(_In_ TimeProvSysCallbacks *callbacks) : _callbacks(*callbacks) {
     UpdateConfig();
     _worker = std::make_unique<XenIfaceWorker>();
-    _worker->RegisterResume([this] {});
+    _worker->RegisterResume([this] { OnResume(); });
 }
 
 HRESULT XenTimeProvider::TimeJumped(_In_ TpcTimeJumpedArgs *args) {
