@@ -31,7 +31,6 @@ public:
 private:
     void OnResume();
     HRESULT Update();
-    HRESULT GetTime(_In_ HANDLE handle, _Out_ unsigned __int64 *xenTime, _Out_ unsigned __int64 *dispersion);
 
     void Log(LogTimeProvEventType level, PCWSTR format, ...) {
         va_list args;

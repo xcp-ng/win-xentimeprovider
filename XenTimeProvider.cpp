@@ -90,10 +90,27 @@ static HRESULT StoreRead(_In_ HANDLE handle, _In_ PCSTR path, _Out_ std::string 
     return S_OK;
 }
 
+static HRESULT GetTimeOffsetPath(_In_ HANDLE handle, _Out_ std::string &out) {
+    RETURN_IF_FAILED(StoreRead(handle, "vm", out));
+    if (out.empty())
+        return HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED);
+    if (out.back() != '/')
+        out += '/';
+    out += "rtc/timeoffset";
+    return S_OK;
+}
+
 static HRESULT StringToInt64(const std::string &str, _Out_ int64_t &val) {
     auto [ptr, ec] = std::from_chars(&*str.begin(), &*str.end(), val);
     if (ptr != &*str.end() || ec != std::errc())
         return E_FAIL;
+    return S_OK;
+}
+
+static HRESULT GetTimeOffset(_In_ HANDLE handle, _In_ const std::string &timeOffsetPath, _Out_ int64_t &out) {
+    std::string tmp;
+    RETURN_IF_FAILED(StoreRead(handle, timeOffsetPath.c_str(), tmp));
+    RETURN_IF_FAILED(StringToInt64(tmp, out));
     return S_OK;
 }
 
@@ -121,40 +138,10 @@ GetXenOffsetTime(_In_ HANDLE handle, _Out_ unsigned __int64 *xenTime, _Out_ unsi
     return S_OK;
 }
 
-HRESULT
-XenTimeProvider::GetTime(_In_ HANDLE handle, _Out_ unsigned __int64 *xenTime, _Out_ unsigned __int64 *dispersion) {
-    unsigned __int64 offsetTime, totalDispersion;
-    HRESULT hr;
-
-    std::string vmPath;
-    RETURN_IF_FAILED(StoreRead(handle, "vm", vmPath));
-    if (vmPath.empty())
-        return HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED);
-    if (vmPath.back() != '/')
-        vmPath += '/';
-    vmPath += "rtc/timeoffset";
-
-    std::string tmp;
+HRESULT XenTimeProvider::Update() {
+    std::string timeOffsetPath, tmp;
     int64_t timeOffsetPre, timeOffsetPost;
 
-    RETURN_IF_FAILED(StoreRead(handle, vmPath.c_str(), tmp));
-    RETURN_IF_FAILED(StringToInt64(tmp, timeOffsetPre));
-
-    hr = GetXenOffsetTime(handle, &offsetTime, &totalDispersion);
-    RETURN_IF_FAILED(hr);
-
-    RETURN_IF_FAILED(StoreRead(handle, vmPath.c_str(), tmp));
-    RETURN_IF_FAILED(StringToInt64(tmp, timeOffsetPost));
-
-    if (timeOffsetPre != timeOffsetPost)
-        return E_PENDING;
-
-    *xenTime = offsetTime - TIME_S(timeOffsetPost);
-    *dispersion = totalDispersion;
-    return S_OK;
-}
-
-HRESULT XenTimeProvider::Update() {
     _sample = std::nullopt;
 
     if (!_worker)
@@ -170,14 +157,24 @@ HRESULT XenTimeProvider::Update() {
     signed __int64 phaseOffset;
     RETURN_IF_FAILED(_callbacks.pfnGetTimeSysInfo(TSI_PhaseOffset, &phaseOffset));
 
+    RETURN_IF_FAILED(GetTimeOffsetPath(handle, timeOffsetPath));
+    RETURN_IF_FAILED(GetTimeOffset(handle, timeOffsetPath, timeOffsetPre));
+
     unsigned __int64 begin;
     RETURN_IF_FAILED(_callbacks.pfnGetTimeSysInfo(TSI_CurrentTime, &begin));
 
     unsigned __int64 xenTime, dispersion;
-    RETURN_IF_FAILED(GetTime(handle, &xenTime, &dispersion));
+    RETURN_IF_FAILED(GetXenOffsetTime(handle, &xenTime, &dispersion));
 
     unsigned __int64 end;
     RETURN_IF_FAILED(_callbacks.pfnGetTimeSysInfo(TSI_CurrentTime, &end));
+
+    // have we changed offset since the start of Update?
+    RETURN_IF_FAILED(GetTimeOffset(handle, timeOffsetPath, timeOffsetPost));
+    if (timeOffsetPre != timeOffsetPost)
+        return E_PENDING;
+
+    xenTime -= TIME_S(timeOffsetPost);
 
     signed __int64 delay = end - begin;
     if (delay < 0)
