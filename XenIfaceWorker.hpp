@@ -7,12 +7,15 @@
 #include <list>
 #include <string>
 #include <tuple>
+#include <functional>
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <cfgmgr32.h>
 
 #include <wil/resource.h>
+
+#include "ResumeNotifier.hpp"
 
 class XenIfaceWorker {
 public:
@@ -22,6 +25,7 @@ public:
     XenIfaceWorker &operator=(const XenIfaceWorker &) = delete;
 
     std::tuple<std::unique_lock<std::mutex>, HANDLE, PCWSTR> GetDevice();
+    void RegisterResume(std::function<void()> &&callback);
 
 private:
     class XenIfaceDevice : public std::enable_shared_from_this<XenIfaceDevice> {
@@ -67,6 +71,7 @@ private:
         wil::unique_hfile _handle;
         std::wstring _path;
         XenIfaceWorker *_worker;
+        ResumeNotifier _suspend;
     };
 
     struct XenIfaceWorkerRequest {
@@ -78,6 +83,7 @@ private:
     HRESULT RefreshDevices(std::list<std::shared_ptr<XenIfaceDevice>> &tombstones);
     void
     QueueRequest(std::unique_lock<std::mutex> &&lock, std::shared_ptr<XenIfaceDevice> target, CM_NOTIFY_ACTION action);
+    void OnResume(XenIfaceDevice *device);
 
     _Pre_satisfies_(eventDataSize >= sizeof(CM_NOTIFY_EVENT_DATA)) static DWORD CALLBACK CmListenerCallback(
         _In_ HCMNOTIFICATION notifyHandle,
@@ -91,6 +97,7 @@ private:
         std::condition_variable _signal;
         _Guarded_by_(_mutex) std::list<XenIfaceWorkerRequest> _requests;
         _Guarded_by_(_mutex) std::shared_ptr<XenIfaceDevice> _active;
+        _Guarded_by_(_mutex) std::vector<std::function<void()>> _callbacks;
     };
     std::jthread _worker;
 };

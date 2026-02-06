@@ -117,6 +117,8 @@ XenIfaceWorker::XenIfaceDevice::XenIfaceDevice(
     if (cr != CR_SUCCESS)
         DebugLog("CM_Register_Notification failed %x", cr);
     THROW_IF_CR_FAILED(cr);
+
+    _suspend = ResumeNotifier(_handle.get(), [this] { _worker->OnResume(this); });
 }
 
 HRESULT XenIfaceWorker::XenIfaceDevice::make(
@@ -146,6 +148,11 @@ std::tuple<std::unique_lock<std::mutex>, HANDLE, PCWSTR> XenIfaceWorker::GetDevi
     return {std::move(lock), nullptr, L""};
 }
 
+void XenIfaceWorker::RegisterResume(std::function<void()> &&callback) {
+    std::lock_guard lock(_mutex);
+    _callbacks.push_back(std::forward<std::function<void()>>(callback));
+}
+
 void XenIfaceWorker::QueueRequest(
     std::unique_lock<std::mutex> &&lock,
     std::shared_ptr<XenIfaceDevice> target,
@@ -156,6 +163,23 @@ void XenIfaceWorker::QueueRequest(
         _requests.emplace_back(XenIfaceWorkerRequest{.Target = std::move(target), .Action = action});
     }
     _signal.notify_one();
+}
+
+void XenIfaceWorker::OnResume(XenIfaceDevice *device) {
+    std::vector<std::function<void()>> callbacks;
+
+    {
+        std::lock_guard lock(_mutex);
+        if (_active.get() == device) {
+            callbacks = _callbacks;
+        }
+    }
+
+    for (const auto &callback : callbacks) {
+        if (callback) {
+            callback();
+        }
+    }
 }
 
 _Pre_satisfies_(eventDataSize >= sizeof(CM_NOTIFY_EVENT_DATA)) DWORD CALLBACK XenIfaceWorker::CmListenerCallback(
