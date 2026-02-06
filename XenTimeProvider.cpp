@@ -54,13 +54,10 @@ HRESULT XenTimeProvider::GetSamples(_Out_ TpcGetSamplesArgs *args) {
 }
 
 HRESULT XenTimeProvider::PollIntervalChanged() {
-    Log(LogTimeProvEventTypeInformation, L"PollIntervalChanged");
     return S_OK;
 }
 
 HRESULT XenTimeProvider::UpdateConfig() {
-    Log(LogTimeProvEventTypeInformation, L"UpdateConfig");
-
     return S_OK;
 }
 

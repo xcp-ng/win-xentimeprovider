@@ -87,7 +87,7 @@ _Pre_satisfies_(eventDataSize >= sizeof(CM_NOTIFY_EVENT_DATA)) DWORD CALLBACK
     case CM_NOTIFY_ACTION_DEVICEQUERYREMOVE:
     case CM_NOTIFY_ACTION_DEVICEQUERYREMOVEFAILED:
         // Must close immediately to avoid failing DEVICEQUERYREMOVE
-        OutputDebugStringA("CM_NOTIFY_ACTION_DEVICEQUERYREMOVE/FAILED");
+        DebugLog("CM_NOTIFY_ACTION_DEVICEQUERYREMOVE/FAILED");
         self->GetHandle().reset();
         break;
     }
@@ -205,7 +205,7 @@ _Pre_satisfies_(eventDataSize >= sizeof(CM_NOTIFY_EVENT_DATA)) DWORD CALLBACK Xe
 }
 
 HRESULT XenIfaceWorker::RefreshDevices(std::list<std::shared_ptr<XenIfaceDevice>> &tombstones) {
-    OutputDebugStringA("XenIfaceWorker::RefreshDevices");
+    DebugLog("XenIfaceWorker::RefreshDevices");
 
     std::vector<WCHAR> buffer;
     auto hr = GetDeviceInterfaceList(buffer, &GUID_INTERFACE_XENIFACE, nullptr, CM_GET_DEVICE_INTERFACE_LIST_PRESENT);
@@ -215,16 +215,16 @@ HRESULT XenIfaceWorker::RefreshDevices(std::list<std::shared_ptr<XenIfaceDevice>
 
     auto interfaces = ParseMultiStrings(buffer.data(), buffer.size());
     if (interfaces.size() == 0) {
-        OutputDebugStringA("Interface list empty");
+        DebugLog("Interface list empty");
         return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
     }
 
-    OutputDebugStringA("Interface list:");
+    DebugLog("Interface list:");
     for (const auto &iface : interfaces)
-        OutputDebugString(iface.c_str());
+        DebugLog("%S", iface.c_str());
 
     if (_active && _active->GetHandle().is_valid()) {
-        OutputDebugStringA("Device valid, skipping refresh");
+        DebugLog("Device valid, skipping refresh");
         return S_FALSE;
     } else if (_active) {
         tombstones.emplace_back(std::move(_active));
@@ -276,7 +276,7 @@ void XenIfaceWorker::WorkerFunc(std::stop_token stop) {
                 _requests.pop_front();
                 switch (request.Action) {
                 case CM_NOTIFY_ACTION_DEVICEINTERFACEARRIVAL:
-                    OutputDebugStringA("CM_NOTIFY_ACTION_DEVICEINTERFACEARRIVAL");
+                    DebugLog("CM_NOTIFY_ACTION_DEVICEINTERFACEARRIVAL");
                     hr = RefreshDevices(tombstones);
                     if (FAILED(hr))
                         DebugLog("RefreshDevices failed %x", hr);
@@ -284,7 +284,7 @@ void XenIfaceWorker::WorkerFunc(std::stop_token stop) {
 
                 case CM_NOTIFY_ACTION_DEVICEREMOVEPENDING:
                 case CM_NOTIFY_ACTION_DEVICEREMOVECOMPLETE:
-                    OutputDebugStringA("CM_NOTIFY_ACTION_DEVICEREMOVEPENDING");
+                    DebugLog("CM_NOTIFY_ACTION_DEVICEREMOVEPENDING");
                     if (request.Target == _active)
                         _active.reset();
                     tombstones.emplace_back(std::move(request.Target));
