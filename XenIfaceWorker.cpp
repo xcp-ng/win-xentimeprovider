@@ -32,7 +32,7 @@ static std::vector<std::wstring> ParseMultiStrings(_In_reads_(count) const WCHAR
             first = i + 1;
         }
     }
-    if (strings.back().empty()) {
+    if (!strings.empty() && strings.back().empty()) {
         strings.pop_back();
     }
     return strings;
