@@ -58,6 +58,10 @@ private:
         const std::wstring &GetPath() const {
             return _path;
         }
+        void Close() {
+            _suspend.Reset();
+            _handle.reset();
+        }
 
         _Pre_satisfies_(eventDataSize >= sizeof(CM_NOTIFY_EVENT_DATA)) static DWORD CALLBACK DeviceHandleCallback(
             _In_ HCMNOTIFICATION notifyHandle,

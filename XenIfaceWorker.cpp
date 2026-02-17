@@ -88,7 +88,7 @@ _Pre_satisfies_(eventDataSize >= sizeof(CM_NOTIFY_EVENT_DATA)) DWORD CALLBACK
     case CM_NOTIFY_ACTION_DEVICEQUERYREMOVEFAILED:
         // Must close immediately to avoid failing DEVICEQUERYREMOVE
         DebugLog("CM_NOTIFY_ACTION_DEVICEQUERYREMOVE/FAILED");
-        self->GetHandle().reset();
+        self->Close();
         break;
     }
 
