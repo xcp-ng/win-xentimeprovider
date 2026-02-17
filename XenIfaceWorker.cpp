@@ -112,7 +112,6 @@ XenIfaceWorker::XenIfaceDevice::XenIfaceDevice(
         .Reserved = 0,
         .u = {.DeviceHandle = {.hTarget = _handle.get()}},
     };
-    wil::unique_hcmnotification newListener;
     auto cr = CM_Register_Notification(&filter, this, &DeviceHandleCallback, &_listener);
     if (cr != CR_SUCCESS)
         DebugLog("CM_Register_Notification failed %x", cr);
@@ -207,6 +206,13 @@ _Pre_satisfies_(eventDataSize >= sizeof(CM_NOTIFY_EVENT_DATA)) DWORD CALLBACK Xe
 HRESULT XenIfaceWorker::RefreshDevices(std::list<std::shared_ptr<XenIfaceDevice>> &tombstones) {
     DebugLog("XenIfaceWorker::RefreshDevices");
 
+    if (_active && _active->GetHandle().is_valid()) {
+        DebugLog("Device valid, skipping refresh");
+        return S_FALSE;
+    } else if (_active) {
+        tombstones.emplace_back(std::move(_active));
+    }
+
     std::vector<WCHAR> buffer;
     auto hr = GetDeviceInterfaceList(buffer, &GUID_INTERFACE_XENIFACE, nullptr, CM_GET_DEVICE_INTERFACE_LIST_PRESENT);
     if (FAILED(hr))
@@ -214,21 +220,13 @@ HRESULT XenIfaceWorker::RefreshDevices(std::list<std::shared_ptr<XenIfaceDevice>
     RETURN_IF_FAILED(hr);
 
     auto interfaces = ParseMultiStrings(buffer.data(), buffer.size());
-    if (interfaces.size() == 0) {
+    if (interfaces.empty()) {
         DebugLog("Interface list empty");
         return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
     }
 
-    DebugLog("Interface list:");
     for (const auto &iface : interfaces)
-        DebugLog("%S", iface.c_str());
-
-    if (_active && _active->GetHandle().is_valid()) {
-        DebugLog("Device valid, skipping refresh");
-        return S_FALSE;
-    } else if (_active) {
-        tombstones.emplace_back(std::move(_active));
-    }
+        DebugLog("Interface: %S", iface.c_str());
 
     auto [newHandle, err] = wil::try_open_file(interfaces[0].c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE);
     if (!newHandle.is_valid())
