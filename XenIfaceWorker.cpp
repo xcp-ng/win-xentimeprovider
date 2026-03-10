@@ -25,15 +25,15 @@
 
 static std::vector<std::wstring> ParseMultiStrings(_In_reads_(count) const WCHAR *buf, size_t count) {
     std::vector<std::wstring> strings;
-    size_t first = 0;
+    if (!buf || !count)
+        return strings;
     for (size_t i = 0; i < count; i++) {
-        if (buf[i] == 0) {
-            strings.emplace_back(buf + first, i - first);
-            first = i + 1;
-        }
-    }
-    if (!strings.empty() && strings.back().empty()) {
-        strings.pop_back();
+        if (buf[i] == L'\0')
+            break;
+        size_t start = i;
+        while (i < count && buf[i] != L'\0')
+            i++;
+        strings.emplace_back(buf + start, i - start);
     }
     return strings;
 }
